@@ -1,102 +1,103 @@
 from http import HTTPStatus
-from uuid import uuid4
 
-from fast_zero.schemas import SubmitUserSchema
-
-new_user = SubmitUserSchema(
-    username="New User", email="email@email.com", password="password123"
-)
+from fast_zero.schemas import UserPublic
 
 
-def test_read_users_should_return_200_and_empty_when_no_users_created(client):
-    response = client.get("/users")
-    response_body = response.json()
-
-    assert response.status_code == HTTPStatus.OK
-    assert response_body.get("users") == list()
-    assert len(response_body.get("users")) == 0
-
-
-def test_create_user_should_return_201_and_user_data(client):
-    response = client.post("/users", json=new_user.model_dump())
-    response_body = response.json()
-
+def test_create_user(client):
+    response = client.post(
+        "/users",
+        json={
+            "username": "alice",
+            "email": "alice@example.com",
+            "password": "secret",
+        },
+    )
     assert response.status_code == HTTPStatus.CREATED
-    assert response_body.get("username") == new_user.username
-    assert response_body.get("email") == new_user.email
-    assert response_body.get("password") is None
-    assert response_body.get("id") is not None
-
-
-def test_read_users_should_return_200_and_created_user(client):
-    response = client.get("/users")
-    response_body = response.json()
-
-    assert response.status_code == HTTPStatus.OK
-    assert len(response_body.get("users")) == 1
-
-    response_user = response_body.get("users")[0]
-    assert response_user.get("username") == new_user.username
-    assert response_user.get("email") == new_user.email
-    assert response_user.get("password") is None
-    assert response_user.get("id") is not None
-
-
-def test_read_user_should_return_200_and_created_user(client):
-    response = client.post("/users", json=new_user.model_dump())
-    response_body = response.json()
-    new_user_id = response_body.get("id")
-
-    response = client.get(f"/users/{new_user_id}")
-    response_body = response.json()
-
-    assert response.status_code == HTTPStatus.OK
-
-    assert response_body.get("username") == new_user.username
-    assert response_body.get("email") == new_user.email
-    assert response_body.get("password") is None
-    assert response_body.get("id") == new_user_id
-
-
-def test_read_user_should_return_404_when_id_does_not_exist(client):
-    response = client.get(f"/users/{uuid4()}")
-    assert response.status_code == HTTPStatus.NOT_FOUND
-
-
-def test_update_users_should_return_200_and_updated_data(client):
-    response = client.get("/users")
-    response_body = response.json()
-    current_user_data = response_body.get("users")[0]
-
-    new_user_data = {
-        "username": "1" + current_user_data.get("username"),
-        "email": "1" + current_user_data.get("email"),
-        "password": "1password",
+    assert response.json() == {
+        "username": "alice",
+        "email": "alice@example.com",
+        "id": 1,
     }
-    user_id = str(current_user_data.get("id"))
 
-    response = client.put(
-        f"/users/{user_id}",
-        json=new_user_data,
-    )
 
+def test_read_users(client):
+    response = client.get("/users")
     assert response.status_code == HTTPStatus.OK
-    response_body = response.json()
-    assert response_body.get("username") == new_user_data.get("username")
-    assert response_body.get("email") == new_user_data.get("email")
+    assert response.json() == {"users": []}
 
 
-def test_update_users_should_return_404_when_id_does_not_exist(client):
-    user_data = {
-        "username": "aaa",
-        "email": "bbb@bbb.com",
-        "password": "1password",
-    }
-    user_id = uuid4()
+def test_read_users_with_users(client, user):
+    user_schema = UserPublic.model_validate(user).model_dump()
+    response = client.get("/users/")
+    assert response.json() == {"users": [user_schema]}
 
+
+def test_update_user(client, user):
     response = client.put(
-        f"/users/{user_id}",
-        json=user_data,
+        "/users/1",
+        json={
+            "username": "bob",
+            "email": "bob@example.com",
+            "password": "mynewpassword",
+        },
     )
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {
+        "username": "bob",
+        "email": "bob@example.com",
+        "id": 1,
+    }
 
+
+def test_delete_user(client, user):
+    response = client.delete("/users/1")
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {"message": "User deleted"}
+
+
+# Failures
+
+
+def test_create_user_fails_when_username_already_in_use(client, user):
+    response = client.post(
+        "/users",
+        json={
+            "username": "Teste",
+            "email": "alice@example.com",
+            "password": "secret",
+        },
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json() == {"detail": "Username already exists"}
+
+
+def test_create_user_fails_when_email_already_in_use(client, user):
+    response = client.post(
+        "/users",
+        json={
+            "username": "alice",
+            "email": "teste@test.com",
+            "password": "secret",
+        },
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json() == {"detail": "Email already exists"}
+
+
+def test_update_user_fails_when_id_not_found(client, user):
+    response = client.put(
+        "/users/2",
+        json={
+            "username": "bob",
+            "email": "bob@example.com",
+            "password": "mynewpassword",
+        },
+    )
     assert response.status_code == HTTPStatus.NOT_FOUND
+    assert response.json() == {"detail": "User not found"}
+
+
+def test_delete_user_fails_when_id_not_found(client, user):
+    response = client.delete("/users/2")
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert response.json() == {"detail": "User not found"}
