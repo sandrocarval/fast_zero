@@ -38,9 +38,10 @@ def test_read_user(client, user):
     assert response.json() == user_schema
 
 
-def test_update_user(client, user):
+def test_update_user(client, user, token):
     response = client.put(
-        "/users/1",
+        f"/users/{user.id}",
+        headers={"Authorization": f"Bearer {token}"},
         json={
             "username": "bob",
             "email": "bob@example.com",
@@ -51,12 +52,15 @@ def test_update_user(client, user):
     assert response.json() == {
         "username": "bob",
         "email": "bob@example.com",
-        "id": 1,
+        "id": user.id,
     }
 
 
-def test_delete_user(client, user):
-    response = client.delete("/users/1")
+def test_delete_user(client, user, token):
+    response = client.delete(
+        f"/users/{user.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert response.status_code == HTTPStatus.OK
     assert response.json() == {"message": "User deleted"}
 
@@ -96,7 +100,20 @@ def test_read_user_fails_when_id_not_found(client, user):
     assert response.json() == {"detail": "User not found"}
 
 
-def test_update_user_fails_when_id_not_found(client, user):
+def test_update_user_fails_when_no_jwt_provided(client, user, token):
+    response = client.put(
+        "/users/1",
+        json={
+            "username": "bob",
+            "email": "bob@example.com",
+            "password": "mynewpassword",
+        },
+    )
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.json() == {"detail": "Not authenticated"}
+
+
+def test_update_user_fails_when_id_not_found(client, user, token):
     response = client.put(
         "/users/2",
         json={
@@ -104,12 +121,21 @@ def test_update_user_fails_when_id_not_found(client, user):
             "email": "bob@example.com",
             "password": "mynewpassword",
         },
+        headers={"Authorization": f"Bearer {token}"},
     )
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"detail": "User not found"}
+    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.json() == {"detail": "Not enough permissions"}
 
 
-def test_delete_user_fails_when_id_not_found(client, user):
-    response = client.delete("/users/2")
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"detail": "User not found"}
+def test_delete_user_fails_when_no_jwt_provided(client, user, token):
+    response = client.delete("/users/1")
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert response.json() == {"detail": "Not authenticated"}
+
+
+def test_delete_user_fails_when_id_not_found(client, user, token):
+    response = client.delete(
+        "/users/2", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.json() == {"detail": "Not enough permissions"}
